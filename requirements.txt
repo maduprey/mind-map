@@ -1,6 +1,7 @@
+--only-binary=:all:
 streamlit==1.27.0
 pandas>=2.1.0
 numpy>=1.26.0
 networkx==3.1
 plotly==5.15.0
-pillow==9.5.0 
+Pillow>=10.0.0 
