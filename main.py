@@ -682,7 +682,7 @@ def main():
         "Maximum Facilities per Type", 
         min_value=50, 
         max_value=5000, 
-        value=500,  # Default to a reasonable number 
+        value=2000,  # Default to a reasonable number 
         step=50,
         help="Controls how many facilities to show. Higher values show more detail but may reduce performance."
     )
