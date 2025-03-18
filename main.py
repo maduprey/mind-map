@@ -1,7 +1,9 @@
 import streamlit as st
 import pandas as pd
+import time
+import os
 from data_loader import load_data
-from network_generator import create_infection_network
+from network_generator import get_network
 from visualizations import create_combined_visualization
 
 def main():
@@ -38,6 +40,29 @@ def main():
         if show_all_points:
             max_sample_points = 0
             st.info("Showing all facilities. This may take longer to render.")
+        
+        # Performance options
+        st.header("Performance Settings")
+        use_optimized = st.checkbox(
+            "Use Optimized Network Builder", 
+            value=True,
+            help="Uses spatial indexing to speed up network calculations"
+        )
+        
+        # Precomputed network options
+        use_precomputed = st.checkbox(
+            "Use Precomputed Network (if available)", 
+            value=True,
+            help="Load a previously computed network from disk"
+        )
+        
+        # Hidden save_precomputed variable (set to False by default)
+        save_precomputed = False
+        
+        # Show precomputed network status only if found
+        precomputed_file = "precomputed_network.pkl"
+        if os.path.exists(precomputed_file):
+            st.success(f"Precomputed network found: {precomputed_file}")
     
     # Load data with sample size parameter
     with st.spinner("Loading facility data..."):
@@ -45,7 +70,21 @@ def main():
     
     # Create network
     with st.spinner("Building network model..."):
-        network = create_infection_network(ltc_data, hospital_data)
+        start_time = time.time()
+        
+        # Get the network, with precomputation options
+        network = get_network(
+            ltc_data, 
+            hospital_data,
+            use_optimized=use_optimized,
+            use_precomputed=use_precomputed,
+            save_precomputed=save_precomputed
+        )
+            
+        # Calculate build time but don't display it
+        build_time = time.time() - start_time
+        
+        # Removed success message about build time
     
     # Create sidebar filters
     with st.sidebar:
@@ -86,6 +125,11 @@ def main():
             st.subheader("Hospitals")
             st.info(f"Showing {len(filtered_hosp)} of {len(hospital_data)} facilities")
             st.info(f"Total beds: {filtered_hosp['beds'].sum():,}")
+        
+        # Network statistics
+        st.header("Network Statistics")
+        st.info(f"Nodes: {network.number_of_nodes()}")
+        st.info(f"Connections: {network.number_of_edges()}")
     
     # Display network visualization
     figure = create_combined_visualization(

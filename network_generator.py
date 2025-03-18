@@ -1,6 +1,9 @@
 import networkx as nx
 import numpy as np
 import pandas as pd
+import streamlit as st
+import os
+import pickle
 from typing import Dict, Tuple, List, Union, Optional
 
 def calculate_connection_strength(
@@ -49,13 +52,18 @@ def calculate_connection_strength(
     except (ValueError, TypeError):
         return 0.0
 
-def create_infection_network(
+@st.cache_data
+def create_optimized_infection_network(
     ltc_data: pd.DataFrame, 
     hospital_data: pd.DataFrame, 
     max_distance_km: float = 100.0
 ) -> nx.Graph:
     """
-    Create a network graph representing potential infection transmission between facilities.
+    Create a network graph using spatial optimization to speed up processing.
+    
+    This optimized version reduces the number of distance calculations needed
+    by using a grid-based spatial index to only compare facilities that are 
+    potentially within the maximum distance.
     
     Args:
         ltc_data: DataFrame with long-term care facility data
@@ -68,66 +76,92 @@ def create_infection_network(
     # Create empty graph
     G = nx.Graph()
     
-    # Combine facility data
-    all_facilities = []
-    
-    # Add LTC facilities to graph
-    for idx, facility in ltc_data.iterrows():
-        node_id = f"LTC_{idx}"  # Use DataFrame index instead of 'id' column
-        G.add_node(
-            node_id,
-            id=str(idx),  # Store index as string id
-            name=facility['name'],
-            lat=facility['latitude'],
-            lon=facility['longitude'],
-            beds=facility['beds'],
-            type="LTC"
-        )
-        all_facilities.append((node_id, facility))
-    
-    # Add hospitals to graph
-    for idx, facility in hospital_data.iterrows():
-        node_id = f"HOSP_{idx}"  # Use DataFrame index instead of 'id' column
-        G.add_node(
-            node_id,
-            id=str(idx),  # Store index as string id
-            name=facility['name'],
-            lat=facility['latitude'],
-            lon=facility['longitude'],
-            beds=facility['beds'],
-            type="HOSP"
-        )
-        all_facilities.append((node_id, facility))
-    
-    # Calculate connections between facilities
-    for i, (node1_id, facility1) in enumerate(all_facilities):
-        # Only need to compare with facilities not yet processed (avoid duplicates)
-        for node2_id, facility2 in all_facilities[i+1:]:
-            # Calculate distance between facilities
+    # Helper function to create nodes
+    def add_facilities_to_graph(df, type_prefix):
+        facilities = []
+        for idx, facility in df.iterrows():
             try:
-                lat1, lon1 = facility1['latitude'], facility1['longitude']
-                lat2, lon2 = facility2['latitude'], facility2['longitude']
-                distance_km = calculate_distance(lat1, lon1, lat2, lon2)
+                node_id = f"{type_prefix}_{idx}"
+                lat = float(facility['latitude'])
+                lon = float(facility['longitude'])
+                beds = int(facility['beds'])
+                name = str(facility['name'])
                 
-                # Only create connections within maximum distance and when distance is valid
-                if distance_km <= max_distance_km and distance_km != float('inf'):
-                    # Calculate connection strength
-                    strength = calculate_connection_strength(
-                        distance_km, 
-                        facility1['beds'], 
-                        facility2['beds']
+                # Only add facilities with valid coordinates
+                if -90 <= lat <= 90 and -180 <= lon <= 180:
+                    G.add_node(
+                        node_id,
+                        id=str(idx),
+                        name=name,
+                        lat=lat,
+                        lon=lon,
+                        beds=beds,
+                        type=type_prefix,
+                        # Add grid cell indices for spatial indexing
+                        cell_x=int((lon + 180) / 2),  # 2-degree grid cells
+                        cell_y=int((lat + 90) / 2)
                     )
-                    
-                    # Add edge to graph with connection data
-                    G.add_edge(
-                        node1_id, 
-                        node2_id, 
-                        weight=strength, 
-                        distance=distance_km
-                    )
-            except (KeyError, TypeError, ValueError) as e:
-                # Skip this pair if there's any issue with the data
+                    facilities.append(node_id)
+            except (ValueError, KeyError, TypeError):
+                # Skip facilities with invalid data
                 continue
+        return facilities
+    
+    # Add facilities as nodes
+    ltc_nodes = add_facilities_to_graph(ltc_data, "LTC")
+    hosp_nodes = add_facilities_to_graph(hospital_data, "HOSP")
+    
+    # Create a spatial index (map grid cells to node IDs)
+    grid_index = {}
+    for node in G.nodes:
+        cell_key = (G.nodes[node]['cell_x'], G.nodes[node]['cell_y'])
+        if cell_key not in grid_index:
+            grid_index[cell_key] = []
+        grid_index[cell_key].append(node)
+    
+    # Compute the maximum grid cell distance to consider
+    # 2 degrees is approximately 222km at the equator, less elsewhere
+    # So 1 degree is roughly 111km
+    grid_distance = int(max_distance_km / 111) + 1
+    
+    # Process nodes and create edges using spatial indexing
+    processed_edges = set()
+    
+    for node1 in G.nodes:
+        cell_x = G.nodes[node1]['cell_x']
+        cell_y = G.nodes[node1]['cell_y']
+        
+        # Only check neighboring cells that could contain nodes within max_distance
+        for dx in range(-grid_distance, grid_distance + 1):
+            for dy in range(-grid_distance, grid_distance + 1):
+                neighbor_cell = (cell_x + dx, cell_y + dy)
+                
+                if neighbor_cell in grid_index:
+                    for node2 in grid_index[neighbor_cell]:
+                        # Skip self-connections and already processed pairs
+                        edge_key = tuple(sorted([node1, node2]))
+                        if node1 != node2 and edge_key not in processed_edges:
+                            processed_edges.add(edge_key)
+                            
+                            # Calculate actual distance
+                            lat1, lon1 = G.nodes[node1]['lat'], G.nodes[node1]['lon']
+                            lat2, lon2 = G.nodes[node2]['lat'], G.nodes[node2]['lon']
+                            distance_km = calculate_distance(lat1, lon1, lat2, lon2)
+                            
+                            # Create edge if within maximum distance
+                            if distance_km <= max_distance_km:
+                                strength = calculate_connection_strength(
+                                    distance_km,
+                                    G.nodes[node1]['beds'],
+                                    G.nodes[node2]['beds']
+                                )
+                                
+                                G.add_edge(
+                                    node1,
+                                    node2,
+                                    weight=strength,
+                                    distance=distance_km
+                                )
     
     return G
 
@@ -169,3 +203,85 @@ def calculate_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> fl
     except (ValueError, TypeError):
         # Return infinity for any conversion errors
         return float('inf') 
+
+def save_network(G: nx.Graph, filename: str = "precomputed_network.pkl") -> bool:
+    """
+    Save a precomputed network to disk.
+    
+    Args:
+        G: NetworkX graph to save
+        filename: Name of the file to save to
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        with open(filename, 'wb') as f:
+            pickle.dump(G, f)
+        return True
+    except Exception as e:
+        st.error(f"Error saving network: {str(e)}")
+        return False
+
+def load_network(filename: str = "precomputed_network.pkl") -> Optional[nx.Graph]:
+    """
+    Load a precomputed network from disk.
+    
+    Args:
+        filename: Name of the file to load from
+        
+    Returns:
+        NetworkX graph if successful, None otherwise
+    """
+    try:
+        if os.path.exists(filename):
+            with open(filename, 'rb') as f:
+                G = pickle.load(f)
+            return G
+        return None
+    except Exception as e:
+        st.error(f"Error loading network: {str(e)}")
+        return None
+
+@st.cache_data
+def get_network(
+    ltc_data: pd.DataFrame, 
+    hospital_data: pd.DataFrame, 
+    use_optimized: bool = True,
+    use_precomputed: bool = False,
+    save_precomputed: bool = False,
+    filename: str = "precomputed_network.pkl",
+    max_distance_km: float = 100.0
+) -> nx.Graph:
+    """
+    Get the infection network, using precomputed data if available and requested.
+    
+    Args:
+        ltc_data: DataFrame with long-term care facility data
+        hospital_data: DataFrame with hospital data
+        use_optimized: Whether to use the optimized network builder
+        use_precomputed: Whether to try loading a precomputed network
+        save_precomputed: Whether to save the network if computed
+        filename: Name of the file to save to/load from
+        max_distance_km: Maximum distance to consider for connections
+        
+    Returns:
+        NetworkX graph with facilities as nodes and transmission paths as edges
+    """
+    # Try to load precomputed network if requested
+    if use_precomputed:
+        G = load_network(filename)
+        if G is not None:
+            return G
+    
+    # Otherwise compute the network
+    if use_optimized:
+        G = create_optimized_infection_network(ltc_data, hospital_data, max_distance_km)
+    else:
+        G = create_infection_network(ltc_data, hospital_data, max_distance_km)
+    
+    # Save the network if requested
+    if save_precomputed:
+        save_network(G, filename)
+    
+    return G 
