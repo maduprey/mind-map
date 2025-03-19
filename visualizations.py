@@ -34,10 +34,10 @@ def create_facilities_map(ltc_data, hospital_data, min_beds, show_ltc=True, show
     
     # Add facilities to map
     if show_ltc:
-        add_facility_markers(filtered_ltc, "#0068c9", "Long-term Care Facilities", "LTC Beds")
+        add_facility_markers(filtered_ltc, "#FFD700", "Long-term Care Facilities", "LTC Beds")
     
     if show_hospitals:
-        add_facility_markers(filtered_hosp, "#ff4b4b", "Hospitals", "Hospital Beds")
+        add_facility_markers(filtered_hosp, "#0068c9", "Hospitals", "Hospital Beds")
     
     # Set layout
     fig.update_layout(
@@ -292,13 +292,13 @@ def create_node_traces(graph, pos):
     """Create node traces for hospitals and LTCs"""
     node_trace_ltc = go.Scatter(
         x=[], y=[], text=[], mode="markers", hoverinfo="text",
-        marker=dict(color="#0068c9", size=[], line=dict(width=2)),
+        marker=dict(color="#FFD700", size=[], line=dict(width=2)),
         name="Long-term Care Facilities"
     )
     
     node_trace_hosp = go.Scatter(
         x=[], y=[], text=[], mode="markers", hoverinfo="text",
-        marker=dict(color="#ff4b4b", size=[], line=dict(width=2)),
+        marker=dict(color="#0068c9", size=[], line=dict(width=2)),
         name="Hospitals"
     )
     
@@ -412,8 +412,8 @@ def add_facilities_to_map(fig, ltc_data, hospital_data, show_ltc, show_hospitals
                 mode="markers",
                 marker=dict(
                     size=ltc_data["beds"].apply(lambda x: min(max(x/20, 5), 15)),
-                    color="rgba(66, 135, 245, 0.8)",
-                    line=dict(width=1, color="rgba(40, 86, 166, 1)"),
+                    color="rgba(255, 215, 0, 0.8)",
+                    line=dict(width=1, color="rgba(204, 172, 0, 1)"),
                     symbol="circle",
                 ),
                 name="Long-term Care",
@@ -431,8 +431,8 @@ def add_facilities_to_map(fig, ltc_data, hospital_data, show_ltc, show_hospitals
                 mode="markers",
                 marker=dict(
                     size=hospital_data["beds"].apply(lambda x: min(max(x/30, 5), 20)),
-                    color="rgba(245, 66, 66, 0.8)",
-                    line=dict(width=1, color="rgba(166, 40, 40, 1)"),
+                    color="rgba(66, 135, 245, 0.8)",
+                    line=dict(width=1, color="rgba(40, 86, 166, 1)"),
                     symbol="circle",
                 ),
                 name="Hospitals",

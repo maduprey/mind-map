@@ -19,7 +19,7 @@ def load_data(max_points_per_type: int = 1000) -> Tuple[pd.DataFrame, pd.DataFra
         configs = {
             'ltc': {
                 'file': "data/facility_2021.csv",
-                'columns': {"nhlong": "longitude", "nhlat": "latitude", "totbeds": "beds", "prov2720": "name"},
+                'columns': {"nhlong": "longitude", "nhlat": "latitude", "totbeds": "beds", "prov0475": "name"},
                 'required': ["state", "county", "totbeds", "nhlong", "nhlat"],
                 'default_name': "LTC Facility"
             },
