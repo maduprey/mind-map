@@ -313,7 +313,31 @@ def create_node_traces(graph, pos):
         facility_name = node_info.get('name', f"{facility_type}")
         state = node_info.get('state', '')
         
+        # Create base hover text
         hover_text = f"<b>{facility_name}</b><br>Type: {facility_type}<br>State: {state}<br>Beds: {node_info['beds']}"
+        
+        # Add additional details for LTC facilities
+        if facility_type == 'LTC':
+            # Dictionary of attributes to include in hover text
+            hover_attributes = {
+                'occpct': {'label': 'Occupancy', 'format': '{:.1f}%'},
+                'avg_dailycensus': {'label': 'Avg Daily Census', 'format': '{:.1f}'},
+                'adm_bed': {'label': 'Admissions per Bed', 'format': '{:.2f}'},
+                'dchprd_pbj': {'label': 'Discharge Rate', 'format': '{:.2f}'},
+                'obs_successfuldc': {'label': 'Successful Discharge', 'format': '{:.4f}'},
+                'obs_rehosprate': {'label': 'Rehospitalization Rate', 'format': '{:.4f}'}
+            }
+            
+            # Loop through and add each attribute if available
+            for attr_name, config in hover_attributes.items():
+                try:
+                    if attr_name in node_info and pd.notna(node_info[attr_name]):
+                        value = float(node_info[attr_name])
+                        formatted_value = config['format'].format(value)
+                        hover_text += f"<br>{config['label']}: {formatted_value}"
+                except (ValueError, TypeError, KeyError) as e:
+                    print(f"Error adding {attr_name} to hover text: {e}")
+        
         connections = len(list(graph.neighbors(node)))
         if connections > 0:
             hover_text += f"<br>Connections: {connections}"
@@ -404,11 +428,79 @@ def add_facilities_to_map(fig, ltc_data, hospital_data, show_ltc, show_hospitals
     """Add facility markers to the map."""
     # Add LTC facilities
     if show_ltc and not ltc_data.empty:
+        # Check which columns are actually available in the dataframe
+        has_occpct = 'occpct' in ltc_data.columns
+        has_avg_dailycensus = 'avg_dailycensus' in ltc_data.columns
+        has_adm_bed = 'adm_bed' in ltc_data.columns
+        has_dchprd_pbj = 'dchprd_pbj' in ltc_data.columns
+        has_obs_successfuldc = 'obs_successfuldc' in ltc_data.columns
+        has_obs_rehosprate = 'obs_rehosprate' in ltc_data.columns
+        
+        # Print column info for debugging
+        print(f"LTC dataframe columns: {ltc_data.columns.tolist()}")
+        print(f"Column dtypes: {ltc_data.dtypes}")
+        
+        # Convert numeric columns to float if they exist
+        if has_occpct:
+            ltc_data['occpct'] = pd.to_numeric(ltc_data['occpct'], errors='coerce')
+        if has_avg_dailycensus:
+            ltc_data['avg_dailycensus'] = pd.to_numeric(ltc_data['avg_dailycensus'], errors='coerce')
+        if has_adm_bed:
+            ltc_data['adm_bed'] = pd.to_numeric(ltc_data['adm_bed'], errors='coerce')
+        if has_dchprd_pbj:
+            ltc_data['dchprd_pbj'] = pd.to_numeric(ltc_data['dchprd_pbj'], errors='coerce')
+        if has_obs_successfuldc:
+            ltc_data['obs_successfuldc'] = pd.to_numeric(ltc_data['obs_successfuldc'], errors='coerce')
+        if has_obs_rehosprate:
+            ltc_data['obs_rehosprate'] = pd.to_numeric(ltc_data['obs_rehosprate'], errors='coerce')
+        
+        # Create hover text based on available columns
+        def create_hover_text(row):
+            text = f"<b>{row['name']}</b><br>Beds: {row['beds']}"
+            
+            try:
+                if has_occpct and pd.notna(row['occpct']):
+                    text += f"<br>Occupancy: {float(row['occpct']):.1f}%"
+            except (ValueError, TypeError):
+                pass
+                
+            try:
+                if has_avg_dailycensus and pd.notna(row['avg_dailycensus']):
+                    text += f"<br>Avg Daily Census: {float(row['avg_dailycensus']):.1f}"
+            except (ValueError, TypeError):
+                pass
+                
+            try:
+                if has_adm_bed and pd.notna(row['adm_bed']):
+                    text += f"<br>Admissions per Bed: {float(row['adm_bed']):.2f}"
+            except (ValueError, TypeError):
+                pass
+                
+            try:
+                if has_dchprd_pbj and pd.notna(row['dchprd_pbj']):
+                    text += f"<br>Discharge Rate: {float(row['dchprd_pbj']):.2f}"
+            except (ValueError, TypeError):
+                pass
+                
+            try:
+                if has_obs_successfuldc and pd.notna(row['obs_successfuldc']):
+                    text += f"<br>Successful Discharge: {float(row['obs_successfuldc']):.4f}"
+            except (ValueError, TypeError):
+                pass
+                
+            try:
+                if has_obs_rehosprate and pd.notna(row['obs_rehosprate']):
+                    text += f"<br>Rehospitalization Rate: {float(row['obs_rehosprate']):.4f}"
+            except (ValueError, TypeError):
+                pass
+                
+            return text
+                
         fig.add_trace(
             go.Scattergeo(
                 lon=ltc_data["longitude"],
                 lat=ltc_data["latitude"],
-                text=ltc_data.apply(lambda row: f"{row['name']}<br>Beds: {row['beds']}", axis=1),
+                text=ltc_data.apply(create_hover_text, axis=1),
                 mode="markers",
                 marker=dict(
                     size=ltc_data["beds"].apply(lambda x: min(max(x/20, 5), 15)),
@@ -427,7 +519,7 @@ def add_facilities_to_map(fig, ltc_data, hospital_data, show_ltc, show_hospitals
             go.Scattergeo(
                 lon=hospital_data["longitude"],
                 lat=hospital_data["latitude"],
-                text=hospital_data.apply(lambda row: f"{row['name']}<br>Beds: {row['beds']}", axis=1),
+                text=hospital_data.apply(lambda row: f"<b>{row['name']}</b><br>Beds: {row['beds']}", axis=1),
                 mode="markers",
                 marker=dict(
                     size=hospital_data["beds"].apply(lambda x: min(max(x/30, 5), 20)),

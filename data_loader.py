@@ -19,7 +19,18 @@ def load_data(max_points_per_type: int = 1000) -> Tuple[pd.DataFrame, pd.DataFra
         configs = {
             'ltc': {
                 'file': "data/facility_2021.csv",
-                'columns': {"nhlong": "longitude", "nhlat": "latitude", "totbeds": "beds", "prov0475": "name"},
+                'columns': {
+                    "nhlong": "longitude", 
+                    "nhlat": "latitude", 
+                    "totbeds": "beds", 
+                    "prov0475": "name",
+                    "occpct": "occpct",
+                    "avg_dailycensus": "avg_dailycensus",
+                    "adm_bed": "adm_bed",
+                    "dchprd_pbj": "dchprd_pbj",
+                    "obs_successfuldc": "obs_successfuldc",
+                    "obs_rehosprate": "obs_rehosprate"
+                },
                 'required': ["state", "county", "totbeds", "nhlong", "nhlat"],
                 'default_name': "LTC Facility"
             },
@@ -47,14 +58,23 @@ def _process_dataset(config: Dict[str, Any], max_points: int) -> pd.DataFrame:
     # Load data
     df = pd.read_csv(config['file'])
     
+    # Print out the column names for debugging
+    print(f"Available columns in {config['file']}: {list(df.columns)}")
+    
     # Select columns available in the dataset
     available_columns = set(df.columns).union(config['required'])
     rename_map = {col: new_name for col, new_name in config['columns'].items() 
                  if col in df.columns}
     
+    print(f"Columns to rename: {rename_map}")
+    
     # Extract required data
     required_cols = [col for col in config['required'] if col in df.columns]
-    df = df[required_cols + list(set(rename_map.keys()) - set(required_cols))].dropna(subset=required_cols)
+    all_cols = required_cols + list(set(rename_map.keys()) - set(required_cols))
+    
+    print(f"Columns to keep: {all_cols}")
+    
+    df = df[all_cols].dropna(subset=required_cols)
     
     # Rename columns
     df = df.rename(columns=rename_map)
@@ -67,6 +87,20 @@ def _process_dataset(config: Dict[str, Any], max_points: int) -> pd.DataFrame:
     df[bed_col] = pd.to_numeric(df[bed_col], errors="coerce")
     df = df[df[bed_col] > 0]
     
+    # Convert additional numeric columns to proper data types
+    numeric_columns = ['occpct', 'avg_dailycensus', 'adm_bed', 'dchprd_pbj', 
+                       'obs_successfuldc', 'obs_rehosprate']
+    
+    for col in numeric_columns:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+            print(f"Converted {col} to numeric, sample: {df[col].head(3)}")
+    
+    # Check if any columns have all NaN values
+    for col in df.columns:
+        if df[col].isna().all():
+            print(f"WARNING: Column {col} has all NaN values")
+    
     # Handle facility name
     if "name" not in df.columns or df["name"].isna().any():
         if "name" not in df.columns:
@@ -77,5 +111,9 @@ def _process_dataset(config: Dict[str, Any], max_points: int) -> pd.DataFrame:
     # Sample if needed
     if max_points > 0 and len(df) > max_points:
         df = df.sample(max_points, random_state=42)
+    
+    # Print final dataframe info
+    print(f"Final dataframe columns: {df.columns.tolist()}")
+    print(f"Final column dtypes: {df.dtypes}")
         
     return df 

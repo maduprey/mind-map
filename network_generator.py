@@ -87,20 +87,52 @@ def create_optimized_infection_network(
                 beds = int(facility['beds'])
                 name = str(facility['name'])
                 
+                # Create a node with base attributes
+                node_attrs = {
+                    'id': str(idx),
+                    'name': name,
+                    'lat': lat,
+                    'lon': lon,
+                    'beds': beds,
+                    'type': type_prefix,
+                    # Add grid cell indices for spatial indexing
+                    'cell_x': int((lon + 180) / 2),  # 2-degree grid cells
+                    'cell_y': int((lat + 90) / 2)
+                }
+                
+                # For LTC facilities, add additional attributes if available
+                if type_prefix == "LTC":
+                    # Print available columns for debugging
+                    print(f"Available columns for LTC facility: {list(facility.index)}")
+                    
+                    # Create a dictionary of columns to add
+                    additional_columns = {
+                        'occpct': 'occpct',
+                        'avg_dailycensus': 'avg_dailycensus',
+                        'adm_bed': 'adm_bed',
+                        'dchprd_pbj': 'dchprd_pbj',
+                        'obs_successfuldc': 'obs_successfuldc',
+                        'obs_rehosprate': 'obs_rehosprate'
+                    }
+                    
+                    # Loop through and add each column safely
+                    for col_name, attr_name in additional_columns.items():
+                        try:
+                            if col_name in facility and pd.notna(facility[col_name]):
+                                value = float(facility[col_name])
+                                node_attrs[attr_name] = value
+                                print(f"Added {attr_name}: {value}")
+                            else:
+                                print(f"Column {col_name} not available or is NaN")
+                        except (ValueError, TypeError) as e:
+                            print(f"Error adding {col_name}: {e}")
+                    
+                    # Print all node attributes for debugging
+                    print(f"Node attributes for {node_id}: {node_attrs}")
+                
                 # Only add facilities with valid coordinates
                 if -90 <= lat <= 90 and -180 <= lon <= 180:
-                    G.add_node(
-                        node_id,
-                        id=str(idx),
-                        name=name,
-                        lat=lat,
-                        lon=lon,
-                        beds=beds,
-                        type=type_prefix,
-                        # Add grid cell indices for spatial indexing
-                        cell_x=int((lon + 180) / 2),  # 2-degree grid cells
-                        cell_y=int((lat + 90) / 2)
-                    )
+                    G.add_node(node_id, **node_attrs)
                     facilities.append(node_id)
             except (ValueError, KeyError, TypeError):
                 # Skip facilities with invalid data
