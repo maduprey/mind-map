@@ -156,7 +156,6 @@ def create_network_visualization(G, min_beds, min_connection_strength, show_ltc=
     fig = go.Figure(
         data=data,
         layout=go.Layout(
-            title="Candida auris Infection Network",
             titlefont=dict(size=16),
             showlegend=True,
             hovermode="closest",
@@ -233,7 +232,6 @@ def create_combined_visualization(G, ltc_data, hospital_data, min_beds, min_conn
     
     # Apply layout configuration
     fig.update_layout(
-        title="Candida auris Transmission Map",
         geo={
             'scope': 'usa',
             'showland': True,
